@@ -1,5 +1,7 @@
 package clause
 
+import "gorm.io/gorm/apaas"
+
 // Interface clause interface
 type Interface interface {
 	Name() string
@@ -81,9 +83,26 @@ type Column struct {
 	Raw   bool
 }
 
+func (p *Column) ToApaasColumn() *apaas.Column {
+	return &apaas.Column{
+		Table: p.Table,
+		Name:  p.Name,
+		Alias: p.Alias,
+		Raw:   p.Raw,
+	}
+}
+
 // Table quote with name
 type Table struct {
 	Name  string
 	Alias string
 	Raw   bool
+}
+
+func (p *Table) ToApaasTable() *apaas.Table {
+	return &apaas.Table{
+		Name:  p.Name,
+		Alias: p.Alias,
+		Raw:   p.Raw,
+	}
 }

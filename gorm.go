@@ -183,7 +183,6 @@ func Open(dialector Dialector, opts ...Option) (db *DB, err error) {
 	}
 
 	db = &DB{Config: config, clone: 1}
-
 	db.callbacks = initializeCallbacks(db)
 
 	if config.ClauseBuilders == nil {
@@ -536,7 +535,7 @@ func (db *DB) GetDBName() (string, error) {
 	var dbName string
 	var err error
 	// must be create new db
-	db1 := db.WithContext(context.Background())
+	db1 := db.WithContext(context.Background()).WithApaasOff()
 	// 检测数据库类型
 	switch db1.Dialector.Name() {
 	case "mysql":
@@ -553,4 +552,23 @@ func (db *DB) GetDBName() (string, error) {
 	}
 
 	return dbName, err
+}
+
+// close Apaas feature
+func (db *DB) WithApaasOff() (tx *DB) {
+	tx = db.Session(&Session{})
+	tx.Statement.ApaasOff = true
+	return
+}
+
+func (db *DB) WithApaasExtra(e map[string]any) (tx *DB) {
+	tx = db.Session(&Session{})
+	tx.Statement.ApaasExtra = e
+	return
+}
+
+func (db *DB) WithApaasServerMode() (tx *DB) {
+	tx = db.Session(&Session{})
+	tx.Statement.ApaasServerMode = true
+	return
 }

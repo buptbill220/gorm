@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"gorm.io/gorm/apaas"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
@@ -50,7 +51,11 @@ type Statement struct {
 
 	// ==========apaas engine field begin==========
 	// apaas mode for gormDB
-	ApaasMode ApaasModeType
+	ApaasMode       apaas.ApaasModeType // default EngineMode: all query proxy to ApaasEngine Service
+	ApaasOff        bool                // close all apaas feature; default open apaas feature
+	ApaasExtra      map[string]any      // used in bytescript sdk when check extra field
+	ApaasDSLArgs    *apaas.ApaasDSLArgs
+	ApaasServerMode bool
 	// ==========apaas engine field end==========
 }
 
@@ -473,8 +478,23 @@ func (stmt *Statement) BuildCondition(query interface{}, args ...interface{}) []
 // Build build sql with clauses names
 func (stmt *Statement) Build(clauses ...string) {
 	var firstClauseWritten bool
-
+	apaasDSLArgs := stmt.ApaasDSLArgs
 	for _, name := range clauses {
+		switch name {
+		case "INSERT":
+			apaasDSLArgs.Type = apaas.InsertType
+			apaasDSLArgs.Insert = &apaas.Insert{}
+		case "SELECT":
+			apaasDSLArgs.Type = apaas.SelectType
+			apaasDSLArgs.Query = &apaas.Query{}
+		case "UPDATE":
+			apaasDSLArgs.Type = apaas.UpdateType
+			apaasDSLArgs.Update = &apaas.Update{}
+		case "DELETE":
+			apaasDSLArgs.Type = apaas.DeleteType
+			apaasDSLArgs.Delete = &apaas.Delete{}
+		default:
+		}
 		if c, ok := stmt.Clauses[name]; ok {
 			if firstClauseWritten {
 				stmt.WriteByte(' ')
@@ -485,6 +505,29 @@ func (stmt *Statement) Build(clauses ...string) {
 				b(c, stmt)
 			} else {
 				c.Build(stmt)
+			}
+		}
+	}
+	apaasDSLArgs.DBName = stmt.DBName
+	apaasDSLArgs.Table = stmt.Table
+	apaasDSLArgs.RawSQL = stmt.SQL.String()
+	apaasDSLArgs.SQL = stmt.DB.Dialector.Explain(apaasDSLArgs.RawSQL, stmt.Vars...)
+	apaasDSLArgs.Vars = stmt.Vars
+	if stmt.Schema != nil {
+		for _, field := range stmt.Schema.Fields {
+			if field.LookupTag != "" {
+				viewCol := apaas.ViewColumn{
+					Column: apaas.Column{
+						Table: stmt.Schema.Table,
+						Name:  field.DBName,
+					},
+					LookupTag: field.LookupTag,
+				}
+				if stmt.Table != stmt.Schema.Table {
+					viewCol.Column.Alias = stmt.Table
+				}
+				viewCol.Column.Raw = true
+				apaasDSLArgs.ViewCols = append(apaasDSLArgs.ViewCols, viewCol)
 			}
 		}
 	}
@@ -526,6 +569,11 @@ func (stmt *Statement) clone() *Statement {
 		Context:              stmt.Context,
 		RaiseErrorOnNotFound: stmt.RaiseErrorOnNotFound,
 		SkipHooks:            stmt.SkipHooks,
+		ApaasMode:            stmt.ApaasMode,
+		ApaasOff:             stmt.ApaasOff,
+		ApaasExtra:           stmt.ApaasExtra,
+		ApaasDSLArgs:         stmt.ApaasDSLArgs,
+		ApaasServerMode:      stmt.ApaasServerMode,
 	}
 
 	if stmt.SQL.Len() > 0 {
@@ -746,4 +794,38 @@ func (stmt *Statement) SelectAndOmitColumns(requireCreate, requireUpdate bool) (
 	}
 
 	return results, !notRestricted && len(stmt.Selects) > 0
+}
+
+func (stmt *Statement) DestTOMap() any {
+	var (
+		dest reflect.Value
+		m    any
+	)
+	if stmt.ReflectValue.IsValid() {
+		dest = stmt.ReflectValue
+	} else {
+		dest = reflect.ValueOf(stmt.Dest)
+	}
+	switch dest.Kind() {
+	case reflect.Slice, reflect.Array:
+		ret := make([]map[string]any, dest.Len())
+		for i := 0; i < dest.Len(); i++ {
+			mm := make(map[string]any, len(stmt.Schema.FieldsByDBName))
+			for fiendName, field := range stmt.Schema.FieldsByDBName {
+				v, _ := field.ValueOf(stmt.Context, dest.Index(i))
+				mm[fiendName] = v
+			}
+			ret[i] = mm
+		}
+		m = ret
+	default:
+		ret := make(map[string]any, len(stmt.Schema.FieldsByDBName))
+		for fiendName, field := range stmt.Schema.FieldsByDBName {
+			v, _ := field.ValueOf(stmt.Context, dest)
+			ret[fiendName] = v
+		}
+		m = ret
+	}
+
+	return m
 }

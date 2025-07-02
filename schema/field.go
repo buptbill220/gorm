@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/jinzhu/now"
-	"gorm.io/gorm/apaas"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/utils"
 )
@@ -99,7 +98,7 @@ type Field struct {
 	UniqueIndex string
 
 	// ==========apaas engine field begin==========
-	LookupMeta *apaas.ApaasLookupMeta
+	LookupTag string
 	//  ==========apaas engine field end==========
 }
 

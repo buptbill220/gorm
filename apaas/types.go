@@ -1,6 +1,7 @@
 package apaas
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -13,11 +14,17 @@ const (
 type ApaasFieldType uint8
 type FieldType uint8
 
+func (f FieldType) IsInvalid() bool {
+	return f == _skipFieldType
+}
+
 const (
 	_skipFieldType FieldType = iota
 	FieldBool
 	FieldInt
+	FieldUInt
 	FieldInt64
+	FieldUInt64
 	FieldFloat
 	FieldFloat64
 	FieldString
@@ -40,7 +47,9 @@ var FieldMapString = []string{
 	"_skipApaasFieldTyle",
 	"FieldBool",
 	"FieldInt",
+	"FieldUInt",
 	"FieldInt64",
+	"FieldUInt64",
 	"FieldFloat",
 	"FieldFloat64",
 	"FieldString",
@@ -84,10 +93,10 @@ type ApaasLookupMeta struct {
 	// lookup orgin meta. example: [anchor_id.faction_id.org_id.union_info]
 	/*
 		    1. anchor_id;       2. faction_id;        3: org_id;
-			1. anchor.anchor_id;2. Vction.faction_id;3: union.org_id;
+			1. anchor.anchor_id;2. faction.faction_id;3: union.org_id;
 	*/
-	LookupMeta []*LookupMeta
-	LastField  string // org_name/union_name
+	LookupMetas []*LookupMeta
+	LastField   string // org_name/union_name
 
 	/*
 		OrgTag only set value when used in SDK mode
@@ -103,29 +112,69 @@ type LookupMeta struct {
 }
 
 type ApaasTable struct {
-	TableName         string
-	DBName            string
-	Fields            []*ApaasField
-	FieldsByName      map[string]*ApaasField
-	LookupIDField     *ApaasField   // example: room.room_id, user.uid, faction.faction_id
-	ForeignFields     []*ApaasField // foreign key. example: room.anchor_id, named of relookupid
-	FormulaFields     []*ApaasField // example: union.title=update_time + org_name
-	LookupValueFields []*ApaasField // example: org_id.org_name, anchor_id.org_id.union_id.union_name
-	ExtraFields       []*ApaasField // example: anchor.extra, room.extra
+	TableName     string
+	DBName        string
+	Fields        []*ApaasField
+	FieldsByName  map[string]*ApaasField
+	LookupIDField *ApaasField   // example: room.room_id, user.uid, faction.faction_id
+	ForeignFields []*ApaasField // foreign key. example: room.anchor_id, named of relookupid
+	FormulaFields []*ApaasField // example: union.title=update_time + org_name
+	ExtraMeta     *ExtraMeta    // maybe both room_extra and contract extra
+}
+
+type TableExtraType uint8
+
+const (
+	RoomExtraType TableExtraType = iota
+	ContractExtraType
+)
+
+type ExtraCond struct {
+	FieldName string
+	OP        string
+	Value     string
+}
+
+type ContractExtra struct {
+	ExtraCond *ExtraCond
+	ExtraRule string
+}
+
+type ExtraMeta struct {
+	ContrctExtra []*ContractExtra
+	ExtraFields  []*ApaasField // example: room.extra is json object, or contract.data_key = 1 && contract.data_value = 1
+}
+
+func (p *ExtraMeta) Check(dest any, e map[string]any) error {
+	var err error
+	for key, checker := range extraChecker {
+		switch d := dest.(type) {
+		case []map[string]any:
+			for _, ele := range d {
+				err = checker(p, ele, e)
+				if err != nil {
+					return fmt.Errorf("ExtraMeta Check ExtraType=%s error=(%s)", key, err.Error())
+				}
+			}
+		case map[string]any:
+			err = checker(p, d, e)
+			if err != nil {
+				return fmt.Errorf("ExtraMeta Check ExtraType=%s error=(%s)", key, err.Error())
+			}
+		}
+	}
+	return nil
 }
 
 type ApaasField struct {
-	Name        string
-	Type        string
-	FType       FieldType
-	IsUniq      bool
-	IsForeign   bool
-	foreignMeta *ForeignMeta
-	IsApaasType bool
-	ApaasMeta   *ApaasMeta
+	Name      string
+	Type      string
+	FType     FieldType
+	IsUniq    bool
+	ApaasMeta *ApaasMeta
 }
 
-func (p *ApaasField) parseFieldType() {
+func (p *ApaasField) arseFieldType() {
 	tp := strings.ToUpper(p.Type)
 	ftp := _skipFieldType
 	switch tp {
@@ -134,6 +183,10 @@ func (p *ApaasField) parseFieldType() {
 	case "INT", "TINYINT", "SMALLINT", "MEDIUMINT":
 		ftp = FieldInt
 	case "BIGINT":
+		ftp = FieldInt64
+	case "TINYINT UNSIGNED", "SMALLINT UNSIGNED", "MEDIUMINT UNSIGNED", "INT UNSIGNED":
+		ftp = FieldUInt
+	case "BIGINT UNSIGNED":
 		ftp = FieldInt64
 	case "FLOAT":
 		ftp = FieldFloat
@@ -165,11 +218,10 @@ type ForeignMeta struct {
 }
 
 type ApaasMeta struct {
+	ForeignMeta *ForeignMeta // equal to LookupMeta
 	ApaasFType  ApaasFieldType
 	ExtraMeta   map[string]*ExtraFieldMeta
 	FormulaMeta *FormulaMeta
-	LookupMeta  *ApaasLookupMeta
-	Checker
 }
 
 func (p *ApaasMeta) IsApaasFieldType() bool {
@@ -184,10 +236,6 @@ func (p *ApaasMeta) IsFormulaField() bool {
 func (p *ApaasMeta) IsLookupID() bool {
 	return p.ApaasFType == ApaasLookupID
 }
-func (p *ApaasMeta) IsLookupValue() bool {
-	return p.ApaasFType == ApaasLookupValue
-}
-
 func (p *ApaasMeta) GetApaasFieldType() ApaasFieldType {
 	return p.ApaasFType
 }
@@ -196,11 +244,6 @@ func (p *ApaasMeta) GetExtraMeta() map[string]*ExtraFieldMeta {
 }
 func (p *ApaasMeta) GetFormulaMeta() *FormulaMeta {
 	return p.FormulaMeta
-}
-func (p *ApaasMeta) Check(extra string) error {
-	// step1: extra rule check
-	err := ExtraCheck(p.ExtraMeta, extra)
-	return err
 }
 
 type ExtraFieldMeta struct {
@@ -211,11 +254,20 @@ type ExtraFieldMeta struct {
 }
 
 type FormulaMeta struct {
-	InputFields map[string]*ApaasField
-	FormulaRule *FormulaRule
+	FormulaRule string   // anchor_id.faction_name + anchor_id.org_id.org_name
+	FormatRule  string   // record.anchor_id_faction_name + record.anchor_id_org_id_org_name
+	LookupTags  []string // [anchor_id.faction_name, anchor_id.org_id.org_name]
 }
 
-type FormulaRule struct {
+func (p *FormulaMeta) ExtractAndReplace() {
+	tags := ExtractNestedFields(p.FormulaRule)
+	p.LookupTags = tags
+	newRule := p.FormulaRule
+	for _, tag := range tags {
+		newRule = strings.Replace(newRule, tag, FormatByteScriptColumnTag(tag), 1)
+	}
+	p.FormatRule = newRule
+	fmt.Printf("raw formular rule: %s\nrewrite formular rule: %s\n", p.FormulaRule, p.FormatRule)
 }
 
 type DBMeta struct {

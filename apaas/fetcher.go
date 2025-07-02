@@ -49,6 +49,11 @@ func UpdateAllDBCol() {
 				if table.LookupIDField != nil {
 					v.lookupIDView[table.LookupIDField.Name] = table
 				}
+				for _, formular := range table.FormulaFields {
+					if formular.ApaasMeta != nil && formular.ApaasMeta.FormulaMeta != nil {
+						formular.ApaasMeta.FormulaMeta.ExtractAndReplace()
+					}
+				}
 			}
 			SetDBCol(dbCol)
 		}
@@ -77,6 +82,11 @@ func UpdateAllDBCol() {
 				dbMeta.tableView[table.TableName] = table
 				if table.LookupIDField != nil {
 					dbMeta.lookupIDView[table.LookupIDField.Name] = table
+				}
+				for _, formular := range table.FormulaFields {
+					if formular.ApaasMeta != nil && formular.ApaasMeta.FormulaMeta != nil {
+						formular.ApaasMeta.FormulaMeta.ExtractAndReplace()
+					}
 				}
 			}
 			GetDBCol().SetDB(f.DBName(), dbMeta)

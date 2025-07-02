@@ -51,3 +51,14 @@ func (p *DBCollection) DeleteDB(dbName string) {
 	delete(p.dbs, dbName)
 	p.lock.Unlock()
 }
+
+func (p *DBCollection) GetTable(dbName, tableName string) (*ApaasTable, bool) {
+	p.lock.RLock()
+	v, ok := p.dbs[dbName]
+	p.lock.RUnlock()
+	if !ok || v == nil {
+		return nil, false
+	}
+	vv, ok := v.tableView[tableName]
+	return vv, ok
+}
