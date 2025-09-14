@@ -6,12 +6,13 @@ import (
 	"reflect"
 	"time"
 
+	"gorm.io/gorm/apaas"
 	"gorm.io/gorm/schema"
 	"gorm.io/gorm/utils"
 )
 
 // prepareValues prepare values slice
-func prepareValues(values []interface{}, db *DB, columnTypes []*sql.ColumnType, columns []string) {
+func prepareValues(values []interface{}, db *DB, columnTypes []reflect.Type, columns []string) {
 	if db.Statement.Schema != nil {
 		for idx, name := range columns {
 			if field := db.Statement.Schema.LookUpField(name); field != nil {
@@ -21,9 +22,14 @@ func prepareValues(values []interface{}, db *DB, columnTypes []*sql.ColumnType, 
 			values[idx] = new(interface{})
 		}
 	} else if len(columnTypes) > 0 {
+		if len(columnTypes) == 0 {
+			for idx := range values {
+				values[idx] = new(interface{})
+			}
+		}
 		for idx, columnType := range columnTypes {
-			if columnType.ScanType() != nil {
-				values[idx] = reflect.New(reflect.PointerTo(columnType.ScanType())).Interface()
+			if columnType != nil {
+				values[idx] = reflect.New(reflect.PointerTo(columnType)).Interface()
 			} else {
 				values[idx] = new(interface{})
 			}
@@ -62,7 +68,6 @@ func (db *DB) scanIntoStruct(rows Rows, reflectValue reflect.Value, values []int
 			}
 		}
 	}
-
 	db.RowsAffected++
 	db.AddError(rows.Scan(values...))
 	joinedNestedSchemaMap := make(map[string]interface{})
@@ -145,7 +150,18 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 	switch dest := db.Statement.Dest.(type) {
 	case map[string]interface{}, *map[string]interface{}:
 		if initialized || rows.Next() {
-			columnTypes, _ := rows.ColumnTypes()
+			var columnTypes []reflect.Type
+			switch t := rows.(type) {
+			case *sql.Rows:
+				types, _ := t.ColumnTypes()
+				columnTypes = make([]reflect.Type, len(types))
+				for idx, ty := range types {
+					columnTypes[idx] = ty.ScanType()
+				}
+			case *apaas.ApaasRows:
+				columnTypes, _ = t.ColumnTypes()
+			}
+
 			prepareValues(values, db, columnTypes, columns)
 
 			db.RowsAffected++
@@ -163,7 +179,17 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 			scanIntoMap(mapValue, values, columns)
 		}
 	case *[]map[string]interface{}:
-		columnTypes, _ := rows.ColumnTypes()
+		var columnTypes []reflect.Type
+		switch t := rows.(type) {
+		case *sql.Rows:
+			types, _ := t.ColumnTypes()
+			columnTypes = make([]reflect.Type, len(types))
+			for idx, ty := range types {
+				columnTypes[idx] = ty.ScanType()
+			}
+		case *apaas.ApaasRows:
+			columnTypes, _ = t.ColumnTypes()
+		}
 		for initialized || rows.Next() {
 			prepareValues(values, db, columnTypes, columns)
 
@@ -318,7 +344,6 @@ func Scan(rows Rows, db *DB, mode ScanMode) {
 				} else {
 					elem = reflect.New(reflectValueType)
 				}
-
 				db.scanIntoStruct(rows, elem, values, fields, joinFields)
 
 				if !update {

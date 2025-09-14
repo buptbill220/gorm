@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/apaas"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/schema"
 	"gorm.io/gorm/utils"
@@ -14,9 +15,16 @@ import (
 func Query(db *gorm.DB) {
 	if db.Error == nil {
 		BuildQuerySQL(db)
-
 		if !db.DryRun && db.Error == nil {
-			rows, err := db.Statement.ConnPool.QueryContext(db.Statement.Context, db.Statement.SQL.String(), db.Statement.Vars...)
+			var (
+				rows gorm.Rows
+				err  error
+			)
+			if !db.Statement.ApaasServerMode && !db.Statement.ApaasOff && db.Statement.ApaasMode != apaas.DirectMode {
+				rows, err = apaas.NewApaasEngineClient().QueryContext(db.Statement.Context, db.Statement.ApaasDSLArgs)
+			} else {
+				rows, err = db.Statement.ConnPool.QueryContext(db.Statement.Context, db.Statement.SQL.String(), db.Statement.Vars...)
+			}
 			if err != nil {
 				db.AddError(err)
 				return
@@ -39,7 +47,6 @@ func BuildQuerySQL(db *gorm.DB) {
 	if db.Statement.SQL.Len() == 0 {
 		db.Statement.SQL.Grow(100)
 		clauseSelect := clause.Select{Distinct: db.Statement.Distinct}
-
 		if db.Statement.ReflectValue.Kind() == reflect.Struct && db.Statement.ReflectValue.Type() == db.Statement.Schema.ModelType {
 			var conds []clause.Expression
 			for _, primaryField := range db.Statement.Schema.PrimaryFields {

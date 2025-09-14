@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"gorm.io/gorm/apaas"
 	"gorm.io/gorm/schema"
 	"gorm.io/gorm/utils"
 )
@@ -109,8 +110,11 @@ func (p *processor) Execute(db *DB) *DB {
 				db.AddError(err)
 			}
 		}
+		// ======apaas engine begin=====
+		parseLookupTagMeta(stmt)
+		parseFormulaMeta(stmt)
+		// ======apaas engine end=====
 	}
-
 	// assign stmt.ReflectValue
 	if stmt.Dest != nil {
 		stmt.ReflectValue = reflect.ValueOf(stmt.Dest)
@@ -125,25 +129,34 @@ func (p *processor) Execute(db *DB) *DB {
 			db.AddError(ErrInvalidValue)
 		}
 	}
-
+	// ======apaas engine begin=====
+	stmt.ApaasDSLArgs = &apaas.ApaasDSLArgs{
+		DBName: stmt.DBName,
+		Table:  stmt.Table,
+	}
+	// ======apaas engine end=====
 	for _, f := range p.fns {
 		f(db)
 	}
 
 	if stmt.SQL.Len() > 0 {
-		db.Logger.Trace(stmt.Context, curTime, func() (string, int64) {
-			sql, vars := stmt.SQL.String(), stmt.Vars
-			if filter, ok := db.Logger.(ParamsFilter); ok {
-				sql, vars = filter.ParamsFilter(stmt.Context, stmt.SQL.String(), stmt.Vars...)
-			}
-			return db.Dialector.Explain(sql, vars...), db.RowsAffected
-		}, db.Error)
+		if db.Statement.ApaasServerMode || db.Statement.ApaasOff || db.Statement.ApaasMode == apaas.DirectMode {
+			db.Logger.Trace(stmt.Context, curTime, func() (string, int64) {
+				sql, vars := stmt.SQL.String(), stmt.Vars
+				if filter, ok := db.Logger.(ParamsFilter); ok {
+					sql, vars = filter.ParamsFilter(stmt.Context, stmt.SQL.String(), stmt.Vars...)
+				}
+				return db.Dialector.Explain(sql, vars...), db.RowsAffected
+			}, db.Error)
+		}
 	}
 
 	if !stmt.DB.DryRun {
 		stmt.SQL.Reset()
 		stmt.Vars = nil
 	}
+	stmt.ApaasDSLArgs = nil
+	stmt.ApaasExtra = nil
 
 	if resetBuildClauses {
 		stmt.BuildClauses = nil
@@ -357,4 +370,41 @@ func removeCallbacks(cs []*callback, nameMap map[string]bool) []*callback {
 		callbacks = append(callbacks, callback)
 	}
 	return callbacks
+}
+
+func parseLookupTagMeta(stmt *Statement) {
+	foundLookup := false
+	for _, field := range stmt.Schema.Fields {
+		tagVal := field.Tag.Get(apaas.TagValue)
+		if len(tagVal) != 0 {
+			field.LookupTag = tagVal
+			foundLookup = true
+		}
+		//stmt.DB.Logger.Info(stmt.Context, "field name=%s, dbname=%s, tag=%s", field.Name, field.DBName, field.LookupTag)
+	}
+	// TODO: here may be need to check select columns and where columns
+	if foundLookup {
+		stmt.ApaasMode = apaas.ViewMode
+	}
+	stmt.DB.Logger.Info(stmt.Context, "----------------apaasmode: %s", stmt.ApaasMode.String())
+}
+
+func parseFormulaMeta(stmt *Statement) {
+	dbCol := apaas.GetDBCol()
+	if dbCol == nil {
+		return
+	}
+	dbMeta, ok := dbCol.GetDB(stmt.DBName)
+	if !ok || dbMeta == nil {
+		return
+	}
+	tableMeta, ok := dbMeta.GetTableByName(stmt.Table)
+	if !ok || tableMeta == nil {
+		return
+	}
+	if len(tableMeta.FormulaFields) == 0 {
+		return
+	}
+	// TODO: here may be need to check select columns and where columns
+	stmt.ApaasMode = apaas.ViewMode
 }

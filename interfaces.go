@@ -80,7 +80,7 @@ type GetDBConnector interface {
 // Rows rows interface
 type Rows interface {
 	Columns() ([]string, error)
-	ColumnTypes() ([]*sql.ColumnType, error)
+	//ColumnTypes() ([]reflect.Type, error)
 	Next() bool
 	Scan(dest ...interface{}) error
 	Err() error

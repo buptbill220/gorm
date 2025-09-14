@@ -74,7 +74,7 @@ var (
 	// Default Default logger
 	Default = New(log.New(os.Stdout, "\r\n", log.LstdFlags), Config{
 		SlowThreshold:             200 * time.Millisecond,
-		LogLevel:                  Warn,
+		LogLevel:                  Info,
 		IgnoreRecordNotFoundError: false,
 		Colorful:                  true,
 	})
@@ -136,7 +136,7 @@ func (l *logger) LogMode(level LogLevel) Interface {
 // Info print info
 func (l *logger) Info(ctx context.Context, msg string, data ...interface{}) {
 	if l.LogLevel >= Info {
-		l.Printf(l.infoStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
+		l.Printf(l.infoStr+msg, append([]interface{}{utils.FileWithLineNumV2()}, data...)...)
 	}
 }
 

@@ -38,22 +38,38 @@ func RegisterDefaultCallbacks(db *gorm.DB, config *Config) {
 	}
 
 	createCallback := db.Callback().Create()
+	// =====apaas callback==========
+	// apaas create callback register before transaction
+	createCallback.Register("apaas_plugin:before_transaction", ApaasExtraCheckerCallBack("create"))
+	// =====apaas callback end======
+
 	createCallback.Match(enableTransaction).Register("gorm:begin_transaction", BeginTransaction)
 	createCallback.Register("gorm:before_create", BeforeCreate)
 	createCallback.Register("gorm:save_before_associations", SaveBeforeAssociations(true))
 	createCallback.Register("gorm:create", Create(config))
 	createCallback.Register("gorm:save_after_associations", SaveAfterAssociations(true))
 	createCallback.Register("gorm:after_create", AfterCreate)
+
 	createCallback.Match(enableTransaction).Register("gorm:commit_or_rollback_transaction", CommitOrRollbackTransaction)
 	createCallback.Clauses = config.CreateClauses
 
 	queryCallback := db.Callback().Query()
+	// =====apaas callback==========
+	// apaas select callback register before transaction
+	queryCallback.Register("apaas_plugin:before_query", ApaasDBSetCallBack)
+	// =====apaas callback end======
+
 	queryCallback.Register("gorm:query", Query)
 	queryCallback.Register("gorm:preload", Preload)
 	queryCallback.Register("gorm:after_query", AfterQuery)
 	queryCallback.Clauses = config.QueryClauses
 
 	deleteCallback := db.Callback().Delete()
+	// =====apaas callback==========
+	// apaas delete callback register before transaction
+	deleteCallback.Register("apaas_plugin:before_transaction", ApaasWriteModeCheckerCallBack("delete"))
+	// =====apaas callback end======
+
 	deleteCallback.Match(enableTransaction).Register("gorm:begin_transaction", BeginTransaction)
 	deleteCallback.Register("gorm:before_delete", BeforeDelete)
 	deleteCallback.Register("gorm:delete_before_associations", DeleteBeforeAssociations)
@@ -63,6 +79,11 @@ func RegisterDefaultCallbacks(db *gorm.DB, config *Config) {
 	deleteCallback.Clauses = config.DeleteClauses
 
 	updateCallback := db.Callback().Update()
+	// =====apaas callback==========
+	// apaas update callback register before transaction
+	updateCallback.Register("apaas_plugin:before_transaction", ApaasExtraCheckerCallBack("update"))
+	// =====apaas callback end======
+
 	updateCallback.Match(enableTransaction).Register("gorm:begin_transaction", BeginTransaction)
 	updateCallback.Register("gorm:setup_reflect_value", SetupUpdateReflectValue)
 	updateCallback.Register("gorm:before_update", BeforeUpdate)
@@ -70,14 +91,25 @@ func RegisterDefaultCallbacks(db *gorm.DB, config *Config) {
 	updateCallback.Register("gorm:update", Update(config))
 	updateCallback.Register("gorm:save_after_associations", SaveAfterAssociations(false))
 	updateCallback.Register("gorm:after_update", AfterUpdate)
+
 	updateCallback.Match(enableTransaction).Register("gorm:commit_or_rollback_transaction", CommitOrRollbackTransaction)
 	updateCallback.Clauses = config.UpdateClauses
 
 	rowCallback := db.Callback().Row()
+	// =====apaas callback==========
+	// apaas select callback register before transaction
+	rowCallback.Register("apaas_plugin:before_query", ApaasDBSetCallBack)
+	// =====apaas callback end======
+
 	rowCallback.Register("gorm:row", RowQuery)
 	rowCallback.Clauses = config.QueryClauses
 
 	rawCallback := db.Callback().Raw()
+	// =====apaas callback==========
+	// apaas select callback register before transaction
+	rawCallback.Register("apaas_plugin:before_query", ApaasWriteModeCheckerCallBack("RawExec"))
+	// =====apaas callback end======
+
 	rawCallback.Register("gorm:raw", RawExec)
 	rawCallback.Clauses = config.QueryClauses
 }

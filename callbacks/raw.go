@@ -6,7 +6,11 @@ import (
 
 func RawExec(db *gorm.DB) {
 	if db.Error == nil && !db.DryRun {
-		result, err := db.Statement.ConnPool.ExecContext(db.Statement.Context, db.Statement.SQL.String(), db.Statement.Vars...)
+		sql := db.Statement.SQL.String()
+		db.Statement.ApaasDSLArgs.RawSQL = sql
+		db.Statement.ApaasDSLArgs.SQL = db.Dialector.Explain(sql, db.Statement.Vars...)
+		db.Statement.ApaasDSLArgs.Vars = db.Statement.Vars
+		result, err := db.Statement.ConnPool.ExecContext(db.Statement.Context, sql, db.Statement.Vars...)
 		if err != nil {
 			db.AddError(err)
 			return

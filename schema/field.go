@@ -96,6 +96,10 @@ type Field struct {
 	// It causes field unnecessarily migration.
 	// Therefore, we need to record the UniqueIndex on this column (exclude Mul UniqueIndex) for MigrateColumnUnique.
 	UniqueIndex string
+
+	// ==========apaas engine field begin==========
+	LookupTag string
+	//  ==========apaas engine field end==========
 }
 
 func (field *Field) BindName() string {
@@ -131,7 +135,6 @@ func (schema *Schema) ParseField(fieldStruct reflect.StructField) *Field {
 		Comment:                tagSetting["COMMENT"],
 		AutoIncrementIncrement: DefaultAutoIncrementIncrement,
 	}
-
 	for field.IndirectFieldType.Kind() == reflect.Ptr {
 		field.IndirectFieldType = field.IndirectFieldType.Elem()
 	}

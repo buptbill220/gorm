@@ -44,8 +44,26 @@ func FileWithLineNum() string {
 			return string(strconv.AppendInt(append([]byte(frame.File), ':'), int64(frame.Line), 10))
 		}
 	}
-
 	return ""
+}
+
+// FileWithLineNum return the file name and line number of the current file
+func FileWithLineNumV2() string {
+	pcs := [13]uintptr{}
+	// the third caller usually from gorm internal
+	len := runtime.Callers(3, pcs[:])
+	frames := runtime.CallersFrames(pcs[:len])
+	var fs []string
+	for i := 0; i < len; i++ {
+		// second return value is "more", not "ok"
+		frame, _ := frames.Next()
+		fs = append(fs, string(strconv.AppendInt(append([]byte(frame.File), ':'), int64(frame.Line), 10)))
+		if (!strings.HasPrefix(frame.File, gormSourceDir) ||
+			strings.HasSuffix(frame.File, "_test.go")) && !strings.HasSuffix(frame.File, ".gen.go") {
+			break
+		}
+	}
+	return strings.Join(fs, "\n")
 }
 
 func IsValidDBNameChar(c rune) bool {

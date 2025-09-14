@@ -18,7 +18,6 @@ func (from From) Build(builder Builder) {
 			if idx > 0 {
 				builder.WriteByte(',')
 			}
-
 			builder.WriteQuoted(table)
 		}
 	} else {
